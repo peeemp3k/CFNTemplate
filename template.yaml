@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EC2 instance running nginx
+
+Parameters:
+  KeyName:
+    Description: Name of the key pair
+    Type: AWS::EC2::KeyPair::KeyName
+
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - m1.small
+      - m1.large
+
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+Resources:
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+            Action: ["sts:AssumeRole"]
+      Policies:
+        - PolicyName: CloudFormationInitAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStackResource
+                Resource: "*"
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2InstanceRole
+
+  NginxInstance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - Install
+            - Configure
+            - Enable
+        Install:
+          commands:
+            01_enable_nginx_repo:
+              command: "sudo amazon-linux-extras enable nginx1 && sudo yum clean metadata"
+            02_install_nginx:
+              command: "sudo yum install -y nginx"
+        Configure:
+          files:
+            "/etc/nginx/conf.d/mystarter.conf":
+              content: |
+                server {
+                  listen 80;
+                  server_name www.mystarter.co.uk;
+                  location / {
+                    root /usr/share/nginx/html;
+                    index index.html;
+                  }
+                }
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            "/usr/share/nginx/html/index.html":
+              content: "<h1>Hello from Nginx!</h1>"
+              mode: "000644"
+              owner: "root"
+              group: "root"
+        Enable:
+          commands:
+            01_remove_default.conf:
+              command: "sudo rm -f /etc/nginx/conf.d/default.conf"
+            02_enable_nginx:
+              command: "sudo systemctl enable nginx"
+            03_restart_nginx:
+              command: "sudo systemctl restart nginx"
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref NginxSecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          exec > /var/log/user-data.log 2>&1
+          set -x
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource NginxInstance --configsets default --region ${AWS::Region}
+          ret=$?
+          /opt/aws/bin/cfn-signal -e $ret --stack ${AWS::StackName} --resource NginxInstance --region ${AWS::Region}
+      Tags:
+        - Key: Name
+          Value: NginxWebServer
+
+  NginxSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP and SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 86.3.42.74/32
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 86.3.42.74/32
+
+Outputs:
+  PublicIP:
+    Description: EC2 instance public IP address
+    Value: !GetAtt NginxInstance.PublicIp
