@@ -67,7 +67,7 @@ Resources:
               content: |
                 server {
                   listen 80;
-                  server_name www.mystarter.co.uk;
+                  server_name www.signal.co.uk;
                   location / {
                     root /usr/share/nginx/html;
                     index index.html;
