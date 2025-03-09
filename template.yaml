@@ -116,11 +116,11 @@ Resources:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: 86.3.42.74/32
+          CidrIp: <your_IP>/32
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: 86.3.42.74/32
+          CidrIp: <your_ip>/32
 
 Outputs:
   PublicIP:
